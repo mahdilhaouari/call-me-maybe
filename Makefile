@@ -1,10 +1,9 @@
-PYTHON = python3
+PYTHON = uv run python
 
 ARGS = \
 	--functions_definition data/input/functions_definition.json \
 	--input data/input/function_calling_tests.json \
 	--output data/output/function_calls.json
-
 
 .PHONY: install run debug clean lint lint-strict
 
@@ -15,16 +14,16 @@ run:
 	@$(PYTHON) -m src.main $(ARGS)
 
 debug:
-	@$(PYTHON) -m pdb -m src.main $(ARGS)
+	@uv run python -m pdb -m src.main $(ARGS)
 
 clean:
 	@find . -type d -name "__pycache__" -exec rm -rf {} +
 	@find . -type d -name ".mypy_cache" -exec rm -rf {} +
-	@find . -type f -name "*.pyc"       -exec rm -f  {} +
+	@find . -type f -name "*.pyc" -exec rm -f {} +
 
 lint:
-	@flake8 .
-	@$(PYTHON) -m mypy . \
+	@uv run flake8 .
+	@uv run python -m mypy . \
 		--warn-return-any \
 		--warn-unused-ignores \
 		--ignore-missing-imports \

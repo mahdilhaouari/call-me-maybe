@@ -4,7 +4,7 @@ import torch
 from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, model_validator
-from llm_sdk import Small_LLM_Model
+from llm_sdk.llm_sdk import Small_LLM_Model
 from src.json_state_tracker import JSONStateTracker
 from src.function_schema import FunctionSchema
 from src.token_trie import TokenTrie
