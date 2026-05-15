@@ -1,0 +1,19 @@
+[project]
+name = "call-me-maybe"
+version = "1.0.0"
+description = "Constrained decoding for function calling"
+requires-python = ">=3.10"
+dependencies = [
+    "torch>=2.0.0",
+    "transformers>=4.30.0",
+    "huggingface-hub>=0.20.0",
+    "numpy>=1.24.0",
+    "pydantic>=2.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = []
