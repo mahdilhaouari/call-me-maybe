@@ -1,15 +1,16 @@
 PYTHON = uv run python
 
 ARGS = \
-	--functions_definition data/input/functions_definition.json \
-	--input data/input/function_calling_tests.json \
+	--functions_definition moulinette/successfully/input/functions_definition.json \
+	--input moulinette/successfully/input/function_calling_tests.json \
 	--output data/output/function_calls.json
 
 .PHONY: install run debug clean lint lint-strict
 
 install:
-	@uv sync
 
+	@uv sync
+	@ uv add --editable ./llm_sdk
 run:
 	@$(PYTHON) -m src.main $(ARGS)
 
