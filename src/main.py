@@ -5,10 +5,9 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, List
+from src.constrained_decoder import ConstrainedDecoder
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.constrained_decoder import ConstrainedDecoder
 
 
 def load_json(path: str) -> Any:

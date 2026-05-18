@@ -1,8 +1,8 @@
 PYTHON = uv run python
 
 ARGS = \
-	--functions_definition moulinette/successfully/input/functions_definition.json \
-	--input moulinette/successfully/input/function_calling_tests.json \
+	--functions_definition data/input/functions_definition.json \
+	--input data/input/function_calling_tests.json \
 	--output data/output/function_calls.json
 
 .PHONY: install run debug clean lint lint-strict
@@ -23,8 +23,9 @@ clean:
 	@find . -type f -name "*.pyc" -exec rm -f {} +
 
 lint:
-	@uv run flake8 .
-	@uv run python -m mypy . \
+	@uv run flake8 src/ --exclude .venv,llm_sdk
+	@uv run python -m mypy src/ \
+		--exclude .venv \
 		--warn-return-any \
 		--warn-unused-ignores \
 		--ignore-missing-imports \

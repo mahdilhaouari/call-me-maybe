@@ -1,10 +1,10 @@
 # src/constrained_decoder.py
 import json
-import torch
+import numpy as np
 from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, model_validator
-from llm_sdk.llm_sdk import Small_LLM_Model
+from llm_sdk import Small_LLM_Model
 from src.json_state_tracker import JSONStateTracker
 from src.function_schema import FunctionSchema
 from src.token_trie import TokenTrie
@@ -124,7 +124,9 @@ def _extract_values(
             else:
                 # no quoted string left — use the last word as a fallback
                 # e.g. "greet mahdi" → name = "mahdi"
-                fallback = LastWord(text=prompt).value  # type: ignore[call-arg]
+                fallback = (LastWord(text=prompt)
+                            .value  # type: ignore[call-arg]
+                            )
                 result[param_name] = fallback
 
     return result
@@ -279,9 +281,9 @@ class ConstrainedDecoder:
 
         for _ in range(max_steps):
             # Ask the model what comes next
-            logits = torch.tensor(
+            logits = np.array(
                 self.model.get_logits_from_input_ids(token_ids),
-                dtype=torch.float32,
+                dtype=np.float32,
             )
 
             state = tracker.get_current_state()
@@ -306,7 +308,9 @@ class ConstrainedDecoder:
                 ).get(pending_key, "string")
 
                 if param_type == "number":
-                    num_val = int(value) if float(value) == int(value) else value
+                    num_val = (
+                         int(value) if float(value) == int(value) else value
+                         )
                     self._inject(
                         str(num_val), token_ids, output_tokens, tracker
                     )
@@ -335,7 +339,11 @@ class ConstrainedDecoder:
 
             # While writing the function name, only allow tokens that
             # continue a valid function name according to the trie
-            if state == "IN_STRING" and key == "name" and function_name is None:
+            if (
+                state == "IN_STRING"
+                and key == "name"
+                and function_name is None
+            ):
                 next_from_trie = self.name_trie.get_allowed_next_tokens(
                     name_tokens
                 )
@@ -383,12 +391,12 @@ class ConstrainedDecoder:
 
             # --- Mask the logits and pick the best allowed token ---
 
-            mask = torch.full_like(logits, -float("inf"))
+            mask = np.full(logits.shape, -np.inf, dtype=np.float32)
             for tid in allowed:
                 if tid < len(mask):
                     mask[tid] = logits[tid]
 
-            next_token_id = int(torch.argmax(mask).item())
+            next_token_id = int(np.argmax(mask))
             # convert Ġ prefix to a real space before feeding to the tracker
             next_token_text = _to_visible(
                 self.id_to_text.get(next_token_id, "")
