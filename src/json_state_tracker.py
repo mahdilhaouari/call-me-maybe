@@ -1,6 +1,3 @@
-# src/json_state_tracker.py
-
-
 class JSONStateTracker:
     """
     A simple state machine that reads a JSON object one character at a time
@@ -23,18 +20,21 @@ class JSONStateTracker:
 
     def __init__(self) -> None:
         self.state = "START"
-        self.depth = 0          # how many { we've opened without closing
-        self.current_key = ""   # the key name being built right now
+        self.depth = 0
+        self.current_key = ""
         self.escape_mode = False
         self.in_quotes = False
 
     def reset(self) -> None:
-        self.__init__()
+        self.state = "START"
+        self.depth = 0
+        self.current_key = ""
+        self.escape_mode = False
+        self.in_quotes = False
 
     def update(self, char: str) -> str:
         """Feed one character and advance the state."""
 
-        # after a backslash, the next character is always literal
         if self.escape_mode:
             self.escape_mode = False
             return self.state
@@ -60,7 +60,6 @@ class JSONStateTracker:
             elif self.in_quotes:
                 self.current_key += char
             elif char == "}":
-                # empty object like {}
                 self.depth -= 1
                 self.state = "END" if self.depth == 0 else "AFTER_VALUE"
             else:
@@ -79,19 +78,19 @@ class JSONStateTracker:
             elif char == "{":
                 self.depth += 1
                 self.state = "IN_KEY"
-                self.current_key = ""   # reset for the nested object
+                self.current_key = ""
             elif char == "[":
                 self.state = "AFTER_VALUE"
             elif char in "-0123456789":
                 self.state = "IN_NUMBER"
-            elif char in "tfn":         # true / false / null
+            elif char in "tfn":
                 self.state = "AFTER_VALUE"
             else:
                 raise ValueError(f"Invalid value start '{char}'")
 
         elif s == "IN_NUMBER":
             if char in "0123456789.eE+-":
-                pass                    # still reading the number
+                pass
             elif char == ",":
                 self.state = "AFTER_COMMA"
                 self.current_key = ""
@@ -107,7 +106,6 @@ class JSONStateTracker:
                 self.state = "AFTER_VALUE"
             elif char == "\\":
                 self.escape_mode = True
-            # any other character is just string content
 
         elif s == "AFTER_VALUE":
             if char == ",":
@@ -144,7 +142,7 @@ class JSONStateTracker:
 
         if s == "IN_KEY":
             if not self.in_quotes:
-                return {'"', "}"}   # '}' covers empty objects
+                return {'"', "}"}
             return {chr(i) for i in range(32, 127)}
 
         if s == "AFTER_KEY":

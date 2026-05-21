@@ -1,4 +1,21 @@
 # tests/test_suite.py
+import json
+import os
+import sys
+import tempfile
+import traceback
+from pathlib import Path
+from typing import Any, Dict
+import pytest
+from src.json_state_tracker import JSONStateTracker  # type: ignore
+from src.token_trie import TokenTrie  # type: ignore
+from src.function_schema import FunctionSchema  # type: ignore
+from src.constrained_decoder import (  # type: ignore
+    NumberList,
+    QuotedStringList,
+    LastWord,
+    _extract_values,
+)
 """
 Test suite for the call_me_maybe project.
 
@@ -10,27 +27,8 @@ Run everything including model:
     pytest tests/test_suite.py -v
 """
 
-import json
-import os
-import sys
-import tempfile
-import traceback
-from pathlib import Path
-from typing import Any, Dict
-
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from src.json_state_tracker import JSONStateTracker
-from src.token_trie import TokenTrie
-from src.function_schema import FunctionSchema
-from src.constrained_decoder import (
-    NumberList,
-    QuotedStringList,
-    LastWord,
-    _extract_values,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +87,6 @@ def schema(tmp_path: Path) -> FunctionSchema:
     schema_file = tmp_path / "functions_definition.json"
     schema_file.write_text(json.dumps(MOCK_SCHEMA))
     return FunctionSchema(str(schema_file))
-
 
 
 # ---------------------------------------------------------------------------
@@ -770,7 +767,7 @@ if __name__ == "__main__":
                 failed += 1
 
     # Run schema tests (need a temp file)
-    print(f"\n── TestFunctionSchema ──")
+    print("\n── TestFunctionSchema ──")
     with tempfile.TemporaryDirectory() as tmp:
         sf = os.path.join(tmp, "functions_definition.json")
         with open(sf, "w") as fh:
@@ -805,7 +802,7 @@ if __name__ == "__main__":
             try:
                 result = decoder_obj.generate_function_call(prompt)
                 assert result["name"] == exp_name
-                for k, v in exp_params.items():
+                for k, v in exp_params.items():  # type: ignore
                     actual = result["parameters"][k]
                     if isinstance(v, float):
                         assert abs(actual - v) < 1e-6
@@ -819,5 +816,5 @@ if __name__ == "__main__":
                 if_ += 1
         print(f"\nINTEGRATION RESULTS: {ip} passed, {if_} failed")
     else:
-        print(f"\n⚠️  Skipping integration tests")
+        print("\n⚠️  Skipping integration tests")
         print(f"   ({SCHEMA_PATH} not found)")

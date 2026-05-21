@@ -1,4 +1,3 @@
-# src/function_schema.py
 import json
 from typing import Any, Dict, List, Union
 
@@ -14,7 +13,7 @@ def _get_type_str(param_def: Union[str, Dict]) -> str:
     """
     if isinstance(param_def, str):
         return param_def
-    return param_def["type"]
+    return str(param_def["type"])
 
 
 class FunctionSchema:
@@ -33,7 +32,6 @@ class FunctionSchema:
         self._param_types: Dict[str, Dict[str, str]] = {}
         self._models: Dict[str, Any] = {}
 
-        # Map JSON type names to Python types for Pydantic
         type_map = {
             "number": StrictFloat,
             "string": str,
@@ -49,12 +47,13 @@ class FunctionSchema:
                 p: _get_type_str(d) for p, d in params.items()
             }
 
-            # Build a Pydantic model dynamically for this function
             fields = {
                 p: (type_map.get(_get_type_str(d), Any), ...)
                 for p, d in params.items()
             }
-            Params = create_model(f"{name}_Params", **fields)
+            Params = create_model(  # type: ignore[call-overload]
+                f"{name}_Params", **fields
+            )
             self._models[name] = create_model(
                 name, name=(str, ...), parameters=(Params, ...)
             )

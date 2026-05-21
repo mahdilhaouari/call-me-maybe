@@ -1,4 +1,3 @@
-# src/token_trie.py
 from typing import Dict, List, Set
 
 
@@ -14,7 +13,7 @@ class TokenTrie:
             node = self.root
             for tok in seq:
                 node = node.setdefault(tok, {})
-            node["$"] = True  # mark end of a valid sequence
+            node["$"] = True
 
     def get_allowed_next_tokens(self, prefix: List[int]) -> Set[int]:
         """Return the set of tokens that can follow the given prefix."""
