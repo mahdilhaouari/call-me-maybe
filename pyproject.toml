@@ -23,6 +23,7 @@ packages = ["src"]
 [tool.uv.workspace]
 members = [
     "llm_sdk",
+    "moulinette"
 ]
 
 [tool.uv.sources]

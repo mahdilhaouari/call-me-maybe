@@ -1,12 +1,14 @@
+# src/main.py
 import argparse
 import json
 import os
 import sys
 from pathlib import Path
 from typing import Any, List
-from src.constrained_decoder import ConstrainedDecoder
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from src.constrained_decoder import ConstrainedDecoder
 
 
 def load_json(path: str) -> Any:
@@ -14,10 +16,10 @@ def load_json(path: str) -> Any:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"File not found: {path}")
+        print(f"❌ File not found: {path}")
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"Invalid JSON in {path}: {e}")
+        print(f"❌ Invalid JSON in {path}: {e}")
         sys.exit(1)
 
 
@@ -25,13 +27,13 @@ def save_json(path: str, data: Any) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Output saved to {path}")
+    print(f"✅ Output saved to {path}")
 
 
 def get_prompts(data: Any) -> List[str]:
     """Accept a list of strings or a list of {"prompt": "..."} objects."""
     if not isinstance(data, list):
-        print("Input file must contain a JSON array.")
+        print("❌ Input file must contain a JSON array.")
         sys.exit(1)
 
     prompts = []
@@ -69,30 +71,43 @@ def main() -> None:
 
     prompts = get_prompts(load_json(args.input))
     if not prompts:
-        print("No valid prompts found in input file.")
+        print("❌ No valid prompts found in input file.")
         sys.exit(1)
 
-    print("Loading model and schema ...")
+    print("🚀 Loading model and schema ...")
     decoder = ConstrainedDecoder(args.functions_definition)
-    print(f"Ready — processing {len(prompts)} prompt(s)\n")
+    print(f"✅ Ready — processing {len(prompts)} prompt(s)\n")
 
     results = []
     for i, prompt in enumerate(prompts, 1):
         print(f"[{i}/{len(prompts)}] {prompt[:70]}")
         try:
             call = decoder.generate_function_call(prompt)
-            results.append({
-                "prompt": prompt,
-                "name": call["name"],
-                "parameters": call["parameters"],
-            })
-            print(f"        → {call['name']}({call['parameters']})")
+
+            # Check if the decoder returned a no-match response
+            if call.get("name") == "no_function_found":
+                print(f"        ⚠️  {call.get('error', 'No match found')}")
+                results.append({
+                    "prompt": prompt,
+                    "fn_name": "no_function_found",
+                    "args": {},
+                    "error": call.get("error", ""),
+                })
+            else:
+                results.append({
+                    "prompt": prompt,
+                    "fn_name": call["name"],
+                    "args": call["parameters"],
+                })
+                print(f"        → {call['name']}({call['parameters']})")
+
         except Exception as e:
-            print(f"        Error: {e}")
+            print(f"        ❌ Error: {e}")
             results.append({
                 "prompt": prompt,
-                "name": "error",
-                "parameters": {},
+                "fn_name": "error",
+                "args": {},
+                "error": str(e),
             })
 
     save_json(args.output, results)

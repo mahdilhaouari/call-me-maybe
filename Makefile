@@ -12,10 +12,10 @@ install:
 	@uv sync
 	@ uv add --editable ./llm_sdk
 run:
-	@$(PYTHON) -m src.main $(ARGS)
+	@$(PYTHON) -m src $(ARGS)
 
 debug:
-	@uv run python -m pdb -m src.main $(ARGS)
+	@uv run python -m pdb -m src $(ARGS)
 
 clean:
 	@find . -type d -name "__pycache__" -exec rm -rf {} +

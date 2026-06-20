@@ -1,3 +1,4 @@
+# src/constrained_decoder.py
 import json
 import numpy as np
 from typing import Any, Dict, List, Optional, Set
@@ -9,13 +10,26 @@ from src.function_schema import FunctionSchema
 from src.token_trie import TokenTrie
 
 
+# The Qwen tokenizer prefixes space-starting tokens with this character (Ġ).
+# We replace it with a real space so our logic works with normal characters.
 _SPACE_PREFIX = "\u0120"
+
+# Returned when the prompt is empty or matches no known function.
+_NO_MATCH_RESPONSE = {
+    "name": "no_function_found",
+    "parameters": {},
+    "error": "The prompt did not match any available function.",
+}
 
 
 def _to_visible(text: str) -> str:
     """Replace the Ġ space-prefix with a real space character."""
     return text.replace(_SPACE_PREFIX, " ")
 
+
+# ---------------------------------------------------------------------------
+# Helpers for extracting values from the prompt text
+# ---------------------------------------------------------------------------
 
 class NumberList(BaseModel):
     """Finds all numbers in a text string."""
@@ -115,13 +129,69 @@ def _extract_values(
                 result[param_name] = strings[str_idx]
                 str_idx += 1
             else:
-                fallback = LastWord.model_validate(
-                    {"text": prompt}
-                ).value
+                # no quoted string left — use the last word as a fallback
+                # e.g. "greet mahdi" → name = "mahdi"
+                fallback = LastWord.model_validate({"text": prompt}).value
                 result[param_name] = fallback
 
     return result
 
+
+
+
+# Keywords that signal a prompt relates to a function.
+# Each function maps to a set of words that a user might use
+# when they want to call that function.
+_FUNCTION_KEYWORDS: Dict[str, Set[str]] = {
+    "fn_add_numbers": {
+        "add", "sum", "plus", "total", "addition",
+        "combine", "together", "plus",
+    },
+    "fn_greet": {
+        "greet", "hello", "hi", "hey", "welcome",
+        "say", "salute",
+    },
+    "fn_reverse_string": {
+        "reverse", "backwards", "flip", "invert", "mirror",
+    },
+    "fn_get_square_root": {
+        "square", "root", "sqrt", "radical",
+    },
+    "fn_substitute_string_with_regex": {
+        "replace", "substitute", "swap", "regex",
+        "pattern", "match", "change", "vowels",
+        "numbers", "words",
+    },
+}
+
+
+def _matches_any_function(
+    prompt: str,
+    function_names: List[str],
+) -> bool:
+    """
+    Return True if the prompt contains at least one keyword that
+    signals it is asking for one of the known functions.
+
+    Falls back to True for any function not listed in _FUNCTION_KEYWORDS
+    so unknown functions are never blocked.
+    """
+    prompt_words = set(prompt.lower().split())
+
+    for name in function_names:
+        keywords = _FUNCTION_KEYWORDS.get(name, set())
+        if not keywords:
+            # function not in our keyword map — allow it through
+            return True
+        if prompt_words & keywords:
+            return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Main decoder class
+# ---------------------------------------------------------------------------
 
 class ConstrainedDecoder:
     """
@@ -139,22 +209,29 @@ class ConstrainedDecoder:
         self.schema = FunctionSchema(schema_path)
         self.names = self.schema.get_allowed_function_names()
 
+        # Load the vocabulary so we know what text each token ID produces
         vocab_path = self.model.get_path_to_vocab_file()
         with open(vocab_path, "r", encoding="utf-8") as f:
             raw_vocab = json.load(f)
 
+        # Build a mapping from token ID → token text
         self.id_to_text: Dict[int, str] = {}
         first_value = next(iter(raw_vocab.values()))
         if isinstance(first_value, str):
+            # format: {"0": "hello", "1": "world", ...}
             for k, v in raw_vocab.items():
                 try:
                     self.id_to_text[int(k)] = v
                 except ValueError:
                     pass
         else:
+            # format: {"hello": 0, "world": 1, ...}
             for k, v in raw_vocab.items():
                 self.id_to_text[int(v)] = k
 
+        # Build a mapping: first visible character → set of token IDs.
+        # We use _to_visible so that space-prefixed tokens (Ġhello) are
+        # stored under ' ' rather than the Ġ character.
         self.tokens_starting_with: Dict[str, Set[int]] = {}
         for token_id, token_text in self.id_to_text.items():
             if not token_text:
@@ -165,12 +242,19 @@ class ConstrainedDecoder:
                     visible[0], set()
                 ).add(token_id)
 
+        # Build a trie from the encoded function names so we can constrain
+        # the model to only generate valid function name tokens
         self.name_trie = TokenTrie(
             [self._encode(n) for n in self.names]
         )
 
+        # Cache the token IDs for characters we need to check explicitly
         self.quote_id = self._single_token('"')
         self.rbrace_id = self._single_token("}")
+
+    # ------------------------------------------------------------------
+    # Small helpers
+    # ------------------------------------------------------------------
 
     def _encode(self, text: str) -> List[int]:
         """Encode a string to a list of token IDs."""
@@ -231,12 +315,17 @@ class ConstrainedDecoder:
             "JSON:"
         )
 
+    # ------------------------------------------------------------------
+    # Generation
+    # ------------------------------------------------------------------
+
     def generate(self, prompt: str, max_steps: int = 600) -> str:
         """
         Run the constrained generation loop and return the raw output string.
         At each step we ask the model for the next token but only allow
         tokens that are consistent with valid JSON and the function schema.
         """
+        # Per-call state
         name_tokens: List[int] = []
         function_name: Optional[str] = None
         keys_written: Set[str] = set()
@@ -248,6 +337,7 @@ class ConstrainedDecoder:
         output_tokens: List[int] = []
 
         for _ in range(max_steps):
+            # Ask the model what comes next
             logits = np.array(
                 self.model.get_logits_from_input_ids(token_ids),
                 dtype=np.float32,
@@ -256,9 +346,12 @@ class ConstrainedDecoder:
             state = tracker.get_current_state()
             key = tracker.current_key
 
+            # As soon as a key is fully written, save it
             if state == "AFTER_KEY" and key:
                 pending_key = key
 
+            # If we have a pre-extracted value ready for this parameter,
+            # write it directly instead of letting the model generate it
             if (
                 state == "AFTER_COLON"
                 and function_name
@@ -292,6 +385,8 @@ class ConstrainedDecoder:
                     pending_key = ""
                     continue
 
+            # --- Figure out which tokens the model is allowed to pick ---
+
             valid_chars = tracker.get_valid_next_chars()
             if not valid_chars:
                 break
@@ -307,6 +402,7 @@ class ConstrainedDecoder:
                 next_from_trie = self.name_trie.get_allowed_next_tokens(
                     name_tokens
                 )
+                # also allow closing quote if we have a complete name so far
                 if (
                     self.name_trie.is_complete_prefix(name_tokens)
                     and self.quote_id
@@ -316,6 +412,7 @@ class ConstrainedDecoder:
                 if not allowed:
                     break
 
+            # For boolean parameters, only allow chars from "true"/"false"
             elif (
                 state == "IN_STRING"
                 and function_name
@@ -330,6 +427,7 @@ class ConstrainedDecoder:
                         bool_tokens.add(self.quote_id)
                     allowed &= bool_tokens
 
+            # Don't allow the object to close until both required keys exist
             required = {"name", "parameters"}
             if (
                 state == "AFTER_VALUE"
@@ -340,10 +438,13 @@ class ConstrainedDecoder:
                 allowed.discard(self.rbrace_id)
                 allowed -= self.tokens_starting_with.get("}", set())
 
+            # If constraints removed everything, fall back to syntax only
             if not allowed:
                 allowed = self._get_allowed_tokens(valid_chars)
                 if not allowed:
                     break
+
+            # --- Mask the logits and pick the best allowed token ---
 
             mask = np.full(logits.shape, -np.inf, dtype=np.float32)
             for tid in allowed:
@@ -351,6 +452,7 @@ class ConstrainedDecoder:
                     mask[tid] = logits[tid]
 
             next_token_id = int(np.argmax(mask))
+            # convert Ġ prefix to a real space before feeding to the tracker
             next_token_text = _to_visible(
                 self.id_to_text.get(next_token_id, "")
             )
@@ -364,6 +466,8 @@ class ConstrainedDecoder:
 
             output_tokens.append(next_token_id)
             token_ids.append(next_token_id)
+
+            # --- Bookkeeping ---
 
             collecting_name = (
                 prev_state == "IN_STRING"
@@ -383,6 +487,7 @@ class ConstrainedDecoder:
 
             new_state = tracker.get_current_state()
 
+            # Mark a string-valued key as done when its value closes
             if (
                 prev_state == "IN_STRING"
                 and new_state == "AFTER_VALUE"
@@ -391,6 +496,7 @@ class ConstrainedDecoder:
             ):
                 keys_written.add(key)
 
+            # Mark "parameters" as done when its nested object closes
             if (
                 prev_state == "AFTER_VALUE"
                 and new_state == "AFTER_VALUE"
@@ -403,13 +509,27 @@ class ConstrainedDecoder:
 
         return str(self.model.decode(output_tokens))
 
+    # ------------------------------------------------------------------
+
     def generate_function_call(self, prompt: str) -> Dict[str, Any]:
         """
         Run generation for the given prompt and return a dict with
-        'name' and 'parameters' keys, or raise ValueError on failure.
+        'name' and 'parameters' keys, or a special error dict if the
+        prompt is empty or does not match any known function.
         """
+        # Case 1: empty prompt
+        if not prompt.strip():
+            print("⚠️  Empty prompt received — skipping model call.")
+            return dict(_NO_MATCH_RESPONSE)
+
+        # Case 2: prompt does not relate to any known function
+        if not _matches_any_function(prompt, self.names):
+            print(f"⚠️  No matching function for: {prompt!r}")
+            return dict(_NO_MATCH_RESPONSE)
+
         raw = self.generate(prompt)
 
+        # find the JSON object in the output
         start = raw.find("{")
         end = raw.rfind("}") + 1
         if start == -1 or end == 0:
@@ -423,6 +543,7 @@ class ConstrainedDecoder:
         if "name" not in call or "parameters" not in call:
             raise ValueError(f"Output is missing required keys: {call}")
 
+        # Make sure parameter values have the right Python types
         for param_name, param_type in self.schema.get_param_type_info(
             call["name"]
         ).items():
