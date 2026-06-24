@@ -137,58 +137,6 @@ def _extract_values(
     return result
 
 
-
-
-# Keywords that signal a prompt relates to a function.
-# Each function maps to a set of words that a user might use
-# when they want to call that function.
-_FUNCTION_KEYWORDS: Dict[str, Set[str]] = {
-    "fn_add_numbers": {
-        "add", "sum", "plus", "total", "addition",
-        "combine", "together", "plus",
-    },
-    "fn_greet": {
-        "greet", "hello", "hi", "hey", "welcome",
-        "say", "salute",
-    },
-    "fn_reverse_string": {
-        "reverse", "backwards", "flip", "invert", "mirror",
-    },
-    "fn_get_square_root": {
-        "square", "root", "sqrt", "radical",
-    },
-    "fn_substitute_string_with_regex": {
-        "replace", "substitute", "swap", "regex",
-        "pattern", "match", "change", "vowels",
-        "numbers", "words",
-    },
-}
-
-
-def _matches_any_function(
-    prompt: str,
-    function_names: List[str],
-) -> bool:
-    """
-    Return True if the prompt contains at least one keyword that
-    signals it is asking for one of the known functions.
-
-    Falls back to True for any function not listed in _FUNCTION_KEYWORDS
-    so unknown functions are never blocked.
-    """
-    prompt_words = set(prompt.lower().split())
-
-    for name in function_names:
-        keywords = _FUNCTION_KEYWORDS.get(name, set())
-        if not keywords:
-            # function not in our keyword map — allow it through
-            return True
-        if prompt_words & keywords:
-            return True
-
-    return False
-
-
 # ---------------------------------------------------------------------------
 # Main decoder class
 # ---------------------------------------------------------------------------
@@ -515,18 +463,14 @@ class ConstrainedDecoder:
         """
         Run generation for the given prompt and return a dict with
         'name' and 'parameters' keys, or a special error dict if the
-        prompt is empty or does not match any known function.
+        prompt is empty.
         """
         # Case 1: empty prompt
         if not prompt.strip():
             print("⚠️  Empty prompt received — skipping model call.")
             return dict(_NO_MATCH_RESPONSE)
 
-        # Case 2: prompt does not relate to any known function
-        if not _matches_any_function(prompt, self.names):
-            print(f"⚠️  No matching function for: {prompt!r}")
-            return dict(_NO_MATCH_RESPONSE)
-
+        # The LLM will guess the function itself using the TokenTrie!
         raw = self.generate(prompt)
 
         # find the JSON object in the output

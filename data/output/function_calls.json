@@ -1,17 +1,10 @@
 [
   {
-    "prompt": "What is the sum of 2 and 3?",
-    "fn_name": "fn_add_numbers",
+    "prompt": "wiiik wiiik wiik",
+    "fn_name": "fn_greet",
     "args": {
-      "a": 2.0,
-      "b": 3.0
+      "name": "wiiik"
     }
-  },
-  {
-    "prompt": "dedededededfefe",
-    "fn_name": "no_function_found",
-    "args": {},
-    "error": "The prompt did not match any available function."
   },
   {
     "prompt": "What is the sum of 265 and 345?",
